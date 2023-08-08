@@ -9,10 +9,13 @@ import pandas as pd
 from itertools import repeat
 import pickle
 
+ROUND_VALUE = 3
+
 class Pipes():
 
-    pipes: dict[int,
-                dict[Literal['pipe'], Pipeline]] = {}
+    def __init__(self) -> None:
+        self.pipes: dict[int,
+                         dict[Literal['pipe'], Pipeline]] = {}
 
     def add_pipe(self, pipe: Union[Pipeline, list[Pipeline], dict[str, Pipeline]]) -> None:
         if isinstance(pipe, Pipeline):
@@ -52,25 +55,27 @@ class Pipes():
             yield name, pipe['pipe']
 
 class AbstractModelPipe(Pipes):
+
     def __init__(self,
                  x: pd.DataFrame,
                  y: pd.Series,
                  pipes) -> None:
         self.x = x
         self.y = y
-        self.add_pipe(pipes)
+        if pipes is not None:
+            self.add_pipe(pipes)
+        super().__init__()
         pass
 
 class CategoricalModelPipe(AbstractModelPipe):
 
     def __init__(self, x: pd.DataFrame,
                  y: pd.Series,
-                 pipes) -> None:
+                 pipes = None) -> None:
 
         super().__init__(x,
                          y,
                          pipes)
-
 
     def fit(self, **args) -> None:
         self.generate_x_y_train_test(**args)
@@ -91,11 +96,16 @@ class CategoricalModelPipe(AbstractModelPipe):
                 raise e
         return
 
-    def get_cat_scores(self) -> None:
-        functions = (f1_score, accuracy_score, precision_score, recall_score)
+    def get_cat_scores(self, func=None) -> None:
+
+        if func is None:
+            functions = (f1_score, accuracy_score, precision_score, recall_score)
+        else:
+            functions = func
+
         for name, pipe in self.yield_pipes():
             y_pred = pipe.predict(self.x_test)
-            scores = [(round(func(self.y_test, y_pred), 2), func.__name__) for func in functions]
+            scores = [(round(func(self.y_test, y_pred), ROUND_VALUE), func.__name__) for func in functions]
             self.pipes[name]['scores'] = scores
         return
 
@@ -136,50 +146,3 @@ class CategoricalModelPipe(AbstractModelPipe):
 # class for categorical pipelines
 
 # problem when we have way too many groups that we want to fit
-
-
-
-class pipemanager():
-    def __init__(self,
-                 pipes: dict[Pipeline],
-                 x: pd.DataFrame,
-                 y: pd.DataFrame,
-                 problem: Literal['categorical', 'continous']='categorical') -> None:
-        self.pipes = self.fix_pipes_if_not_dict(pipes) # create a custom class to manage this
-        self.x = x
-        self.y = y
-        pass
-
-    def fix_pipes_if_not_dict(self, pipes) -> dict[str, dict[Literal['pipe'], Pipeline]]:
-        return dict({i: {'pipe': pipe} for i, pipe in enumerate(pipes)})
-
-    def generate_x_y_train_test(self, **args):
-        self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(self.x, self.y, **args)
-        return
-
-    def fit_pipes(self):
-        for name, pipe in self.pipes.items():
-            p = pipe['pipe']
-            try:
-                p.fit(self.x_train, self.y_train)
-            except Exception as e:
-                print(f'Error in {name}')
-                raise e
-        return
-
-    def get_cat_scores(self):
-        functions = (f1_score, accuracy_score, precision_score, recall_score)
-        for model_name, pipe in self.pipes.items():
-            p = pipe['pipe']
-            y_pred = p.predict(self.x_test)
-            scores = [(round(func(self.y_test, y_pred), 2), func.__name__) for func in functions]
-            self.pipes[model_name]['scores'] = scores
-        return
-
-    def get_dataframes(self): # fazer com yield
-        for model_name, pipe in self.pipes.items():
-            p = pipe['pipe']
-            precessor: Pipeline = p.named_steps['preprocessor'] # colocar em função
-            df_new = precessor.fit_transform(self.x)
-        return
-
